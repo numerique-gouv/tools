@@ -132,17 +132,23 @@ EOF
 
 kubectl -n kube-system rollout restart deployments/coredns
 
-echo "6. Install ingress-nginx"
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-kubectl -n ingress-nginx create secret tls mkcert --key /tmp/127.0.0.1.nip.io+1-key.pem --cert /tmp/127.0.0.1.nip.io+1.pem || echo ok
-kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"}]'
+if ! kubectl get ns ingress-nginx; then
+	echo "6. Install ingress-nginx"
+	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+	kubectl -n ingress-nginx create secret tls mkcert --key /tmp/127.0.0.1.nip.io+1-key.pem --cert /tmp/127.0.0.1.nip.io+1.pem || echo ok
+	kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"}]'
+fi
 
-echo "7. Setup namespace"
-kubectl create ns ${APPLICATION}
-kubectl config set-context --current --namespace=${APPLICATION}
-kubectl -n ${APPLICATION} create secret generic mkcert --from-file=rootCA.pem="$(mkcert -CAROOT)/rootCA.pem" || echo ok
+if ! kubectl get ns ${APPLICATION}; then
+	echo "7. Setup namespace"
+	kubectl create ns ${APPLICATION}
+	kubectl config set-context --current --namespace=${APPLICATION}
+	kubectl -n ${APPLICATION} create secret generic mkcert --from-file=rootCA.pem="$(mkcert -CAROOT)/rootCA.pem" || echo ok
+fi
 
-echo "8. Inject our custom CA in a configmap for certifi"
-curl https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/cacert.pem
-cat "$(mkcert -CAROOT)/rootCA.pem" >>/tmp/cacert.pem
-kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
+if ! kubectl get configmap certifi -n ${APPLICATION}; then
+	echo "8. Inject our custom CA in a configmap for certifi"
+	curl https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/cacert.pem
+	cat "$(mkcert -CAROOT)/rootCA.pem" >>/tmp/cacert.pem
+	kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
+fi

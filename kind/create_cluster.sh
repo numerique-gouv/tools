@@ -151,4 +151,5 @@ if ! kubectl get configmap certifi -n ${APPLICATION}; then
 	curl https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/cacert.pem
 	cat "$(mkcert -CAROOT)/rootCA.pem" >>/tmp/cacert.pem
 	kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
+	kubectl -n ${APPLICATION} create secret generic certifi --from-file=/tmp/cacert.pem
 fi

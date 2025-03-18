@@ -17,9 +17,9 @@ echo "1. Create registry container unless it already exists"
 reg_name='kind-registry'
 reg_port='5001'
 if [ "$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)" != 'true' ]; then
-	docker run \
-		-d --restart=always -p "127.0.0.1:${reg_port}:5000" --network bridge --name "${reg_name}" \
-		registry:2
+  docker run \
+    -d --restart=always -p "127.0.0.1:${reg_port}:5000" --network bridge --name "${reg_name}" \
+    registry:2
 fi
 
 echo "2. Create kind cluster with containerd registry config dir enabled"
@@ -32,7 +32,7 @@ echo "2. Create kind cluster with containerd registry config dir enabled"
 # https://github.com/containerd/containerd/blob/main/docs/cri/config.md#registry-configuration
 # See: https://github.com/containerd/containerd/blob/main/docs/hosts.md
 if ! kind get clusters | grep ${CLUSTERNAME}; then
-	cat <<EOF | kind create cluster --name ${CLUSTERNAME} --config=-
+  cat <<EOF | kind create cluster --name ${CLUSTERNAME} --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 containerdConfigPatches:
@@ -41,7 +41,6 @@ containerdConfigPatches:
     config_path = "/etc/containerd/certs.d"
 nodes:
 - role: control-plane
-  image: kindest/node:v1.27.3
   kubeadmConfigPatches:
   - |
     kind: InitConfiguration
@@ -69,8 +68,8 @@ echo "3. Add the registry config to the nodes"
 # alias localhost:${reg_port} to the registry container when pulling images
 REGISTRY_DIR="/etc/containerd/certs.d/localhost:${reg_port}"
 for node in $(kind get nodes --name ${CLUSTERNAME}); do
-	docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
-	cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR}/hosts.toml"
+  docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
+  cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR}/hosts.toml"
 [host."http://${reg_name}:5000"]
 EOF
 done
@@ -79,7 +78,7 @@ echo "4. Connect the registry to the cluster network if not already connected"
 # 4. Connect the registry to the cluster network if not already connected
 # This allows kind to bootstrap the network but ensures they're on the same network
 if [ "$(docker inspect -f='{{json .NetworkSettings.Networks.kind}}' "${reg_name}")" = 'null' ]; then
-	docker network connect "kind" "${reg_name}"
+  docker network connect "kind" "${reg_name}"
 fi
 
 echo "5. Document the local registry"
@@ -133,23 +132,33 @@ EOF
 kubectl -n kube-system rollout restart deployments/coredns
 
 if ! kubectl get ns ingress-nginx; then
-	echo "6. Install ingress-nginx"
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-	kubectl -n ingress-nginx create secret tls mkcert --key /tmp/127.0.0.1.nip.io+1-key.pem --cert /tmp/127.0.0.1.nip.io+1.pem || echo ok
-	kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"}]'
+  echo "6. Install ingress-nginx"
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+  kubectl -n ingress-nginx create secret tls mkcert --key /tmp/127.0.0.1.nip.io+1-key.pem --cert /tmp/127.0.0.1.nip.io+1.pem || echo ok
+  kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"}]'
+  cat <<EOF | kubectl apply -n ingress-nginx -f -
+  apiVersion: v1
+  data:
+    allow-snippet-annotations: "true"
+    annotations-risk-level: Critical
+  kind: ConfigMap
+  metadata:
+    name: ingress-nginx-controller
+    namespace: ingress-nginx
+EOF
 fi
 
 if ! kubectl get ns ${APPLICATION}; then
-	echo "7. Setup namespace"
-	kubectl create ns ${APPLICATION}
-	kubectl config set-context --current --namespace=${APPLICATION}
-	kubectl -n ${APPLICATION} create secret generic mkcert --from-file=rootCA.pem="$(mkcert -CAROOT)/rootCA.pem" || echo ok
+  echo "7. Setup namespace"
+  kubectl create ns ${APPLICATION}
+  kubectl config set-context --current --namespace=${APPLICATION}
+  kubectl -n ${APPLICATION} create secret generic mkcert --from-file=rootCA.pem="$(mkcert -CAROOT)/rootCA.pem" || echo ok
 fi
 
 if ! kubectl get configmap certifi -n ${APPLICATION}; then
-	echo "8. Inject our custom CA in a configmap for certifi"
-	curl https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/cacert.pem
-	cat "$(mkcert -CAROOT)/rootCA.pem" >>/tmp/cacert.pem
-	kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
-	kubectl -n ${APPLICATION} create secret generic certifi --from-file=/tmp/cacert.pem
+  echo "8. Inject our custom CA in a configmap for certifi"
+  curl https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/cacert.pem
+  cat "$(mkcert -CAROOT)/rootCA.pem" >>/tmp/cacert.pem
+  kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
+  kubectl -n ${APPLICATION} create secret generic certifi --from-file=/tmp/cacert.pem
 fi

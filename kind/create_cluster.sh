@@ -134,13 +134,20 @@ kubectl -n kube-system rollout restart deployments/coredns
 if ! kubectl get ns ingress-nginx; then
   echo "6. Install ingress-nginx"
   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+  kubectl apply -n ingress-nginx -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/refs/heads/main/docs/examples/customization/custom-errors/custom-default-backend.yaml
   kubectl -n ingress-nginx create secret tls mkcert --key /tmp/127.0.0.1.nip.io+1-key.pem --cert /tmp/127.0.0.1.nip.io+1.pem || echo ok
-  kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"}]'
+  kubectl -n ingress-nginx patch deployments.apps ingress-nginx-controller --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-ssl-certificate=ingress-nginx/mkcert"},{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value":"--default-backend-service=ingress-nginx/nginx-errors"}
+]'
+  kubectl -n ingress-nginx patch deployment nginx-errors --type=json -p='[
+  {"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "ghcr.io/tarampampam/error-pages:3.3.0"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/env", "value": [{"name": "TEMPLATE_NAME", "value": "ghost"}, {"name": "SHOW_DETAILS", "value": "false"}, {"name": "SEND_SAME_HTTP_CODE", "value": "true"}]}
+]'
   cat <<EOF | kubectl apply -n ingress-nginx -f -
   apiVersion: v1
   data:
     allow-snippet-annotations: "true"
     annotations-risk-level: Critical
+    custom-http-errors: 500,501,502,503,504
   kind: ConfigMap
   metadata:
     name: ingress-nginx-controller

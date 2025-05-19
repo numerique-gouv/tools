@@ -129,6 +129,7 @@ data:
     }
 EOF
 
+kubectl -n kube-system scale deployment coredns --replicas=1
 kubectl -n kube-system rollout restart deployments/coredns
 
 if ! kubectl get ns ingress-nginx; then

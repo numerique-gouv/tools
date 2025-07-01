@@ -170,3 +170,42 @@ if ! kubectl get configmap certifi -n ${APPLICATION}; then
   kubectl -n ${APPLICATION} create configmap certifi --from-file=cacert.pem=/tmp/cacert.pem
   kubectl -n ${APPLICATION} create secret generic certifi --from-file=/tmp/cacert.pem
 fi
+
+echo "9. Check pod readiness across all namespaces..."
+
+sleep_interval=10
+
+echo "Initial wait time: $((sleep_interval * 2)) seconds…"
+sleep $((sleep_interval * 2))
+
+check_pods_ready() {
+    local max_attempts=60  # Maximum number of attempts (10 minutes with 10s intervals)
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Attempt $attempt/$max_attempts - Checking pod status..."
+
+        not_ready_count=$( kubectl get po -A --no-headers | grep -v -E "Running|Completed"| wc -l | tr -d ' ')
+
+        if [ "$not_ready_count" -eq 0 ]; then
+            echo "✅ All pods are ready!"
+            return 0
+        else
+            echo "⏳ $not_ready_count pod(s) still not ready. Waiting $sleep_interval seconds…"
+            sleep $sleep_interval
+            ((attempt++))
+        fi
+    done
+
+    echo "❌ Timeout: Some pods are still not ready after 10 minutes"
+    echo "Final pod status:"
+    kubectl get po -A
+    return 1
+}
+
+if check_pods_ready; then
+    echo "🎉 Cluster is fully ready!"
+else
+    echo "⚠️  Some pods may need manual intervention"
+    exit 1
+fi
